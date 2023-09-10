@@ -91,7 +91,7 @@ def menu():
     tally_center_id = input(" ")
 
     # Проверяем id центра - пытаемся получить его по id из базы данных. Если не получается, то выводим ошибку и выходим
-    tally_center = get_tally_center(tally_center_id)
+    tally_center = get_tally_center(tally_center_id)[0]
     if not tally_center:
         print(error("A tally center with such a id was not found!"))
         exit()

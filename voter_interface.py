@@ -30,7 +30,7 @@ def menu():
     passport = input(" ")
 
     # Проверяем паспорт
-    voter = get_voter(passport)  # Получаем голосующего по паспорту
+    voter = get_voter(passport)[0]  # Получаем голосующего по паспорту
     if not voter:
         # Если голосующего нет, выводим ошибку, что голосующий с таким паспортом не найден и выходим
         print(error("A citizen with such a passport number was not found!"))

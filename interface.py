@@ -108,7 +108,7 @@ def to_vote(passport, private_key_serialized, candidate_id, tally_center_id):
             backend=default_backend()
         )
     except:
-        return -1
+        return -1  # Приватный ключ в неверном формате
 
     # Загружаем мастер-фразу из файла master_phrase.txt
     """
@@ -116,10 +116,9 @@ def to_vote(passport, private_key_serialized, candidate_id, tally_center_id):
     повторно, при этом не раскрывая сам его выбор мы используем мастер-фразу. Мы шифруем её с помощью приватного ключа 
     и помещаем в БД при голосовании. Соответственно, если в БД есть мастер-фраза, значит пользователь уже голосовал
     
-    Для проверки того, что пользователь может голосовать мы просто "прогоняем" мастер-фразу туда-обратно. Сначала шифруем
-    публичным ключом, потом расшифровываем приватным. Если получаем ту же фразу на выходе - пользователь действительно
-    имеет право голосовать.
-    """
+    Для проверки того, что пользователь может голосовать мы просто "прогоняем" мастер-фразу туда-обратно. Сначала 
+    шифруем публичным ключом, потом расшифровываем приватным. Если получаем ту же фразу на выходе - пользователь 
+    действительно имеет право голосовать."""
     with open("master_phrase.txt", "r") as master_phrase_file:
         master_phrase = master_phrase_file.read()
     # В базе данных ищем zkp. Если он есть - значит человек уже голосовал
@@ -199,7 +198,7 @@ def tally_votes(tally_center_id, tally_center_private_key):
 
     # Дешифрование голосов и подсчет результатов
     # results - словарь, в котором ключ - id кандидата, а значение - количество голосов за него
-    results = defaultdict(int)
+    results = defaultdict(int)  # int - это тип данных, который возвращает defaultdict, если ключа нет в словаре
     for encrypted_vote_data in encrypted_votes:
         # Проходим по всем зашифрованным голосам. При этом каждый голос будет называться encrypted_vote_data.
         # Дешифруем голос с помощью приватного ключа участка
@@ -246,10 +245,8 @@ def check_votes():
     изменения результатов голосования в БД. По факту эта функция - реализация 6 пункта из ТЗ.
     """
     final_results = []  # Список, в котором будут храниться результаты голосования по каждому участку
-
-    tally_centers = execute_query("SELECT * FROM tally_centers")  # Получаем список всех участков
-
-    for tally_center in tally_centers:
+    # Проходим по каждому участку
+    for tally_center in list_of_tally_centers():
         """
         Проходим по каждому участку, записываем его id и имя в переменные center_id и center_name соответственно.
         """
@@ -257,11 +254,12 @@ def check_votes():
         center_name = tally_center[1]
 
         #  Получаем результаты голосования по участку из БД
-        tally_results = \
-            execute_query("SELECT * FROM tally_results WHERE tally_center_id=? ORDER BY tally_center_id ASC",
-                          (center_id,))[
-                0]
-        if not tally_results:
+        try:
+            tally_results = \
+                execute_query("SELECT * FROM tally_results WHERE tally_center_id=?",
+                              (center_id,))[
+                    0]
+        except:
             #  Если результатов нет - возвращаем 0. Это означает, что голосование еще не закончено (не все участки)
             return 0
 
@@ -281,7 +279,7 @@ def check_votes():
             # Проходим по словарю с результатами и записываем в список результаты по каждому кандидату.
             # Получаем имя кандидата по его id
             candidate_name = \
-                execute_query("SELECT name FROM candidates WHERE id=? ORDER BY id ASC", (candidate_id,))[0][0]
+                execute_query("SELECT name FROM candidates WHERE id=?", (candidate_id,))[0][0]
             # Записываем в список результаты по кандидату в формате (id, имя, количество голосов)
             center_results.append((candidate_id, candidate_name, votes_count))
         # Записываем в итоговый список результаты по участку в формате (id, имя, результаты по кандидатам)

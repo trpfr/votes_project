@@ -85,11 +85,7 @@ def data_generation():
         уже голосовал, чтобы не дать ему голосовать дважды.
         """
         public_key, private_key = crypto.generate_keys()
-        pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        )
+        pem = crypto.serialize_private_key(private_key)
 
         # Сохраняем приватный ключ в файл
         with open(f"user_keys/private_key_{passport}.pem", "wb") as f:
