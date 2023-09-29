@@ -8,140 +8,126 @@ import art
 from interface import error, clear_console, tally_votes, check_votes, get_tally_center
 
 """
-Это файл для интерфейса избирательного участка.
+Interface for tally center
 """
 
 
 def display_results(final_results):
     """
-    В отдельную функцию вынесли вывод результатов. Для того чтобы интерфейс был более читаемым - используем
-    различные библиотеки "красоты" текста: rich, art для всех интерфейсов. Конкретная данная функция, в дополнение
-    к этому выводит результаты в виде таблицы с помощью библиотеки rich. Не будем останавливаться на подробностях
-    работы с библиотекой rich, так как это не является требованием данного задания и используется для красоты =)
+    Display results of voting as a table using rich and art libraries
     """
     console = Console()
 
-    # Заголовочная панель
     console.print("[bold blue]Voting results[/bold blue]\n")
 
-    # Создаем и выводим таблицы для каждого tally_center
+    # Create table for each tally center
     for center_id, center_name, center_results in final_results:
-        # Проходим по каждому центру.
-        # Настройки таблицы. Заголовок - название центра, затем две колонки: имя кандидата и количество голосов
         table = Table(title=center_name)
         table.add_column("Candidate Name", justify="left", style="cyan", no_wrap=True)
         table.add_column("Votes", justify="right", style="magenta")
 
-        # Добавляем строки в таблицу
+        # Add rows to the table
         for candidate_id, candidate_name, votes_count in center_results:
             table.add_row(candidate_name, str(votes_count))
 
-        # Выводим таблицу на экран
+        # Print table
         console.print(table)
-        # Добавляем пустую строку для красоты
+        # Just new line
         console.print("\n")
 
-    # Создаем таблицу для общих результатов (по всем центрам)
-    total_table = Table(title="Total Results", style="green")  # Заголовок - "Total Results", стиль таблицы- зеленый
-    total_table.title_style = "green"  # Стиль заголовка - зеленый
-    total_table.add_column("Candidate Name", justify="left", style="cyan", no_wrap=True)  # Колонка - имя кандидата
-    total_table.add_column("Votes", justify="right", style="magenta")  # Колонка - количество голосов
+    # Create table for total results
+    total_table = Table(title="Total Results", style="green")
+    total_table.title_style = "green"
+    total_table.add_column("Candidate Name", justify="left", style="cyan", no_wrap=True)
+    total_table.add_column("Votes", justify="right", style="magenta")
 
-    # Считаем общие голоса для каждого кандидата
-    total_votes = {}  # Словарь для хранения общих голосов
+    # Calculate total votes
+    total_votes = {}
     for _, _, center_results in final_results:
-        # Проходим по каждому центру.
-        # В center хранится кортеж (id, name, results). Нам нужен только results, первые два отмечаем прочерками
+        # Because we need only center results here, we can use _ instead of center_id and center_name
         for candidate_id, candidate_name, votes_count in center_results:
-            # Проходим по каждому кандидату в центре
             if candidate_name in total_votes:
-                # Если кандидат уже есть в словаре, то добавляем голоса
+                # If candidate is already in the dictionary, add votes
                 total_votes[candidate_name] += votes_count
             else:
-                # Если кандидата нет в словаре, то создаем его и записываем голоса
+                # If candidate is not in the dictionary, create new key and add votes
                 total_votes[candidate_name] = votes_count
 
     for candidate_name, votes_count in total_votes.items():
-        # Проходим по каждому кандидату в словаре и добавляем строку в таблицу общих результатов
+        # Add rows to the table for each candidate
         total_table.add_row(candidate_name, str(votes_count))
 
-    # Выводим таблицу общих результатов
+    # Print total table
     console.print(total_table)
 
 
 def menu():
     """
-    Функция для вывода меню и обработки выбора пользователя. Сделана для лучшей читаемости данных и красоты =)
-    Как говорилось ранее, для красоты используем библиотеку rich. В данной функции используется библиотека art для
-    создания ASCII баннера (рисунок символами). На подробностях графического оформления, опять же, останавливаться не
-    будем, так как это не является требованием данного задания и используется только для красоты =)
+    Function for displaying menu using rich and art libraries
     """
-    # Создаем ASCII баннер с помощью библиотеки art
+    # ASCII banner with help of art library
     ascii_banner_top = art.text2art("WELCOME", "slant")
 
-    # Добавляем текст к баннеру
     banner_content = Text.from_markup("[blue]" + ascii_banner_top + "[/blue]\n[red]to tally interface[/red]")
     banner_panel = Panel(banner_content)
 
-    # Выводим на экран
     print(Align.center(banner_panel, vertical="middle"))
 
-    # Просим ввести id центра
+    # Ask user to enter tally center id
     print(Text("Please, enter your tally center id:", style="bold white"), end="")
     tally_center_id = input(" ")
 
-    # Проверяем id центра - пытаемся получить его по id из базы данных. Если не получается, то выводим ошибку и выходим
+    # Check if tally center with such id exists
     tally_center = get_tally_center(tally_center_id)[0]
     if not tally_center:
         print(error("A tally center with such a id was not found!"))
         exit()
 
-    clear_console()  # Очищаем консоль, чтобы отобразить следующую "страницу" интерфейса
-    # Текст с ID центра и приветствием
+    # Clear console for next "page" of interface
+    clear_console()
+    # Just header with greeting
     header_text = f"ID of Tally Center: {tally_center[0]}\nThere is {tally_center[1]}! Please, choose what you want " \
                   f"to do:\n"
 
-    # Список пунктов меню
+    # List of menu items
     menu_items = ["Count votes", "Get results"]
 
-    # Генерируем текст меню
+    # Generate text for menu
     menu_text = "\n".join([f"{index + 1}. {item}" for index, item in enumerate(menu_items)])
 
-    # Объединяем все тексты
+    # Union header and menu text
     full_text = header_text + menu_text
 
-    # Создаем панель для меню
+    # Create panel with menu
     menu_panel = Panel(full_text, title="Menu", border_style="blue")
 
-    # Выводим меню на экран
+    # Print panel
     print(menu_panel)
 
-    # Выводим строку для ввода номера пункта меню
+    # Ask user to enter menu item number
     menu_choice = input("Enter menu item number: ")
 
-    # Проверяем, что введено число и оно в диапазоне
+    # Check if user entered valid menu item number
     if not menu_choice.isdigit() or int(menu_choice) not in range(1, len(menu_items) + 1):
-        print(error("Invalid menu item number!"))  # Выводим ошибку и выходим, если нет
+        print(error("Invalid menu item number!"))
         exit()
 
     if menu_choice == "1":
-        # Обработка первого пункта меню - подсчет голосов
-        clear_console()  # Очищаем консоль, чтобы отобразить следующую "страницу" интерфейса
-        # Просим ввести путь до приватного ключа
+        # First menu item - count votes
+        clear_console()  # "Next page"
         private_key_path = input("Enter path to your private key: ")
-        # Пробуем прочитать файл с приватным ключом
+        # Try to read private key from file
         try:
             with open(private_key_path, "rb") as key_file:
                 private_key = key_file.read()
         except:
-            # Если не получается, то выводим ошибку и выходим
             print(error("Invalid path to key or file was corrupted!"))
             exit()
 
-        # Пытаемся подсчитать голоса выбранного центра с помощью приватного ключа
+        # Try to count votes for this tally center
         result = tally_votes(tally_center_id, private_key)
 
-        # Обрабатываем ошибки
+        # Error handling
         if result == 0:
             print(error("No such tally center with this id!"))
             exit()
@@ -152,30 +138,26 @@ def menu():
             print(error("Decryption error! There is problems with private key or results was corrupted!"))
             exit()
 
-        # Если все хорошо, то выводим сообщение об успешном подсчете голосов и возвращаемся в меню
+        # If everything is ok, print success message and return to menu
         print(Text("Votes successfully counted! ", style="bold white"))
         menu()
 
     if menu_choice == "2":
-        # Обработка второго пункта меню - получение результатов и вывод их на экран
-        clear_console()  # Очищаем консоль, чтобы отобразить следующую "страницу" интерфейса
-        result = check_votes()  # Получаем результаты и проверяем их на подлинность
+        # Second menu item - get results
+        clear_console()  # "Next page"
+        result = check_votes()  # Check and get results
         if result == 0:
-            #  Голосование ещё не было завершено - не у всех центров подсчитаны голоса
+            #  Voting is not over
             print(error("Voting is not over! Not all tally centers have counted votes!"))
             exit()
         if result == -1:
-            #  Кто-то пытался изменить результаты голосования в БД или же изменил подпись на неверную
+            #  Data corruption (wrong signature or results in database)
             print(error("DATA CORRUPTION DETECTED! THERE IS WRONG SIGNATURE OR RESULTS IN DATABASE!"))
 
-        # Вызываем функцию для вывода результатов на экран
+        # If everything is ok, display results
         display_results(result)
 
 
-"""
-Точка входа в программу. Проверяем, что файл запущен напрямую, а не импортирован как модуль. Если запущен напрямую,
-то вызываем функцию меню. Это общепринятый стандарт для Python.
-"""
 if __name__ == "__main__":
     # Вызываем функцию меню
     menu()

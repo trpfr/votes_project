@@ -11,37 +11,40 @@ import crypto
 import sqlite3
 
 """
-Основной файл. В нем реализованы все основные функции, которые используется для голосования.
+Main module. Contains all the main functions that are used for voting.
 """
 
 
 def execute_query(query, params=()):
     """
-    Выполняет SQL-запрос и возвращает результат. Мы могли бы делать это также, как в db_generator.py, но это менее
-    удобно и менее читаемо. В таком случае бы пришлось при каждом запросе писать 3 строки, вместо одной. Поэтому,
-    для нашего удобства мы вынесли это в отдельную функцию.
+    Executes SQL query and returns the result. This function is used to simplify the code.
     """
     with sqlite3.connect("voting_database.db") as conn:
-        cursor = conn.cursor()  # Создаем курсор - объект, который позволяет нам взаимодействовать с базой данных
-        cursor.execute(query, params)  # Выполняем запрос
-        result = cursor.fetchall()  # Получаем результат
-        conn.commit()  # Сохраняем изменения (если они были)
-    return result  # Возвращаем результат
+        cursor = conn.cursor()  # Create cursor - object that allows us to execute queries
+        cursor.execute(query, params)  # Execute query with parameters
+        result = cursor.fetchall()  # Get the result
+        conn.commit()  # Commit changes (if there are any)
+    return result
 
 
 def clear_console():
     """
-    Функция "для красоты". Очищает консоль. Для удобства написания вынесено в
-    отдельную функцию. Ввиду того, что функция и так небольшая, можно было бы этого не делать, но так удобнее.
+    Function for clearing the console. Made for beauty.
+    Work for Unix, Mac and Windows
     """
-    os.system("cls")
+    system = os.name
+    if system == 'posix':
+        os.system('clear')  # For Unix and Mac
+    elif system == 'nt':
+        os.system('cls')  # For Windows
+    else:
+        print("\n" * 100)  # For others systems (just print 100 new lines)
 
 
 def error(message):
     """
-    Ещё одна функция "для красоты". Выводит сообщение об ошибке в виде панели с красной рамкой и символом ошибки.
-    Возвращает эту панель. Вынесено в отдельную функцию для удобства (чтобы не повторять один и тот же код несколько
-    раз).
+    Function for formatting error message. Returns formatted error message with red border and
+    error emoji. Made with rich library.
     """
     error_text = Text("⚠️ " + message, style="bold red")
     error_panel = Panel(error_text, title="Error", border_style="red")
@@ -49,58 +52,64 @@ def error(message):
 
 
 """
-Следующие функции сделаны для удобства, чтобы не писать каждый раз запрос к БД. Они просто возвращают результат.
-По факту это геттеры для БД.
+The following functions are used to get data from the database. They are used to simplify the code.
 """
 
 
 def list_of_tally_centers():
-    """Короткий способ получить список всех избирательных участков."""
+    """Getter for list of all tally centers."""
     return execute_query("SELECT * FROM tally_centers")
 
 
 def list_of_candidates():
-    """Короткий способ получить список всех кандидатов."""
+    """Getter for list of all candidates."""
     return execute_query("SELECT * FROM candidates")
 
 
 def get_voter(passport):
-    """Короткий способ получить данные избирателя по его паспорту."""
+    """Getter for voter by passport ID."""
     return execute_query("SELECT * FROM voters WHERE id=?", (passport,))
 
 
 def get_tally_center(tally_center_id):
-    """Короткий способ получить данные избирательного участка по его ID."""
+    """Getter for tally center by ID."""
     return execute_query("SELECT * FROM tally_centers WHERE id=?", (tally_center_id,))
 
 
 def to_vote(passport, private_key_serialized, candidate_id, tally_center_id):
     """
-    Наша основная функция, в которой происходит вся логика голосования. Возвращает код ошибки, если она произошла, или
-    True, если всё прошло успешно. Принимает на себя паспорт, приватный ключ, ID кандидата и ID избирательного участка.
+    Function for voting. This function is called when user wants to vote.
+    Return codes:
+    1/True - success
+    0 - no such passport in database
+    -1 - private key in wrong format
+    -2 - double voting
+    -3 - wrong public key of voter
+    -4 - wrong private key of voter
+    -5 - wrong public key of tally center
+    -6 - voting is over
     """
-    # Проверяем, что голосование ещё не закончилось - нет результатов
+    # Check if voting is over
     results = execute_query("SELECT COUNT(*) FROM tally_results")[0][0]
     if results != 0:
         """
-        Если в таблице tally_results есть хотя бы одна запись, значит голосование уже закончилось. В таком случае
-        мы не можем допустить дальнейшего голосования и завершаем функцию, возвращая код ошибки -6 
-        (коды выбраны случайно).
+        If there are any results in tally_results table, it means that voting is over.
         """
         return -6
-    # Проверяем паспорт в базе
-    voter = get_voter(passport)[0]  # 0 - потому что возвращается список, а нам нужен только первый элемент (id)
-    # Если такого паспорта нет, то возвращаем 0
-    if not voter:
+    # Check if voter exists
+    try:
+        voter = get_voter(passport)[0]
+    except:
+        # If there is no such passport in database
         return 0
     try:
         """
-        Пытаемся загрузить приватный ключ. Если не получается - возвращаем -1. Это может произойти, если пользователь
-        дал неверный приватный ключ и пытается с ним проголосовать. То есть он не взял чужой ключ или сделал что-то 
-        похожее, а пытается вместо ключа использовать что-то совершенно другое.
-        
-        Здесь мы делаем "десериализацию" ключа - превращаем его из строки в объект, который можно использовать для
-        расшифровки. Соответственно, если ключ неверный, то он не сможет быть десериализован и мы получим ошибку.
+        Try to load private key. If it fails - return -1. It can happen if user gave wrong private key and tries to vote
+        with it. So he didn't take someone else's key or something like that, but tries to use something completely
+        different (like discount card instead of private card).
+                
+        Here the system does "deserialization" of the key - we transform it from string to object that can be used for
+        decryption. So if the key is wrong, it won't be able to be deserialized and we will get an error.
         """
         user_private_key = serialization.load_pem_private_key(
             private_key_serialized,
@@ -108,210 +117,193 @@ def to_vote(passport, private_key_serialized, candidate_id, tally_center_id):
             backend=default_backend()
         )
     except:
-        return -1  # Приватный ключ в неверном формате
+        # If private key is in wrong format
+        return -1
 
-    # Загружаем мастер-фразу из файла master_phrase.txt
-    """
-    Как уже говорилось ранее, для реализации ZKP (проверки, что пользователь имеет право голосовать и не голосует
-    повторно, при этом не раскрывая сам его выбор мы используем мастер-фразу. Мы шифруем её с помощью приватного ключа 
-    и помещаем в БД при голосовании. Соответственно, если в БД есть мастер-фраза, значит пользователь уже голосовал
-    
-    Для проверки того, что пользователь может голосовать мы просто "прогоняем" мастер-фразу туда-обратно. Сначала 
-    шифруем публичным ключом, потом расшифровываем приватным. Если получаем ту же фразу на выходе - пользователь 
-    действительно имеет право голосовать."""
+    # Load master phrase from file
+    """As mentioned earlier, to implement ZKP (to verify that a user has the right to vote and doesn't vote twice, 
+    without revealing their choice), I use a master phrase. I encrypt it using the private key and place it in the 
+    database when voting. Accordingly, if the master phrase is in the database, it means the user has already voted.
+
+    To check that a user can vote, I simply "run" the master phrase back and forth. First, I encrypt it with the public 
+    key, then decrypt it with the private key. If I get the same phrase at the output, it means the user truly has the 
+    right to vote."""
     with open("master_phrase.txt", "r") as master_phrase_file:
         master_phrase = master_phrase_file.read()
-    # В базе данных ищем zkp. Если он есть - значит человек уже голосовал
+    # Find ZKP record in database. If it exists - user has already voted
     if voter[3]:
         zkp = voter[3]
-        # Дешифруем zkp с помощью приватного ключа
+        # Try to decrypt ZKP
         decrypted_zkp = crypto.decrypt_vote(zkp, user_private_key)
         """
-        Если расшифровали верно - человек уже голосовал и пытается сделать это снова. Возвращаем ошибку -2.
-        Если расшифровали неверно - была попытка подделки записи (кто-то внес zkp в БД напрямую),
-        обнуляем zkp и разрешаем человеку голосовать.
+        If decrypted ZKP is equal to master phrase, it means that ZKP was real. If it's not - it means that ZKP was
+        fake. In this case we should replace ZKP with None (because it's fake) and continue voting.
         """
 
-        if decrypted_zkp == master_phrase:  # ZKP был настоящим
-            return -2  # Попытка повторного голосования
+        if decrypted_zkp == master_phrase:
+            return -2  # If ZKP record was real - return -2 (double voting)
         else:
-            execute_query("UPDATE voters SET zkp=? WHERE id=?", (None, passport))  # Обнуляем zkp - заменяем его на None
+            # If ZKP was fake - replace it with None
+            execute_query("UPDATE voters SET zkp=? WHERE id=?", (None, passport))
     """
-    Если человек не голосовал - мы должны проверить с помощью ZKP, что он вообще может это делать. Для этого мы 
-    попробуем зашифровать мастер-фразу с помощью публичного ключа пользователя (который хранится в БД), а затем 
-    расшифровать её же с помощью приватного ключа. Если получится - пользователь имеет право голосовать, если нет -
-    нет.
+    If we are here, it means that user has not voted yet. So we should check if he can vote. To do this, we will try to
+    encrypt master phrase with public key and then decrypt it with private key. If we get the same phrase - user can
+    vote, if not - he can't.
     """
     try:
-        user_public_key = load_pem_public_key(voter[2].encode('utf-8'))  # Загружаем публичный ключ из БД
+        # Public key from DB
+        user_public_key = load_pem_public_key(voter[2].encode('utf-8'))
     except:
-        return -3  # Если не получилось - возвращаем ошибку -3 - неверный публичный ключ пользователя в БД (взломали)
-    zkp = crypto.encrypt_vote(master_phrase, user_public_key)  # Шифруем мастер-фразу публичным ключом
+        return -3  # Wrong public key of voter in DB (it's mean that DB was changed illegally)
+    zkp = crypto.encrypt_vote(master_phrase, user_public_key)  # Encrypt master phrase with public key
     if crypto.decrypt_vote(zkp, user_private_key) != master_phrase:
-        return -4  # Если расшифровали неверно - возвращаем ошибку -4 - неверный приватный ключ пользователя
+        return -4  # If decrypted ZKP is not equal to master phrase - user can't vote
 
-    """
-    Если все проверки пройдены, то голосуем. Получаем public key избирательного участка (из БД) по id участка. 
-    При этом мы декодируем этот id как utf-8 (это просто для того, чтобы мы смогли нормально прочитать его"""
+    # If we are here, it means that user can vote.
     public_key = load_pem_public_key(
         execute_query("SELECT public_key FROM tally_centers WHERE id=?", (tally_center_id,))[0][0].encode('utf-8'))
 
-    # Шифруем с помощью публичного ключа голос (id кандидата)
+    # Encrypt vote (candidate ID) with public key of tally center
     encrypted_vote = crypto.encrypt_vote(candidate_id, public_key)
     if encrypted_vote is None:
-        # Если при шифровании произошла ошибка (публичный ключ в БД неверный) - возвращаем ошибку -5
+        # Wrong public key of tally center
         return -5
-    # Записываем голос в базу
+    # Commit encrypted vote to database
     execute_query("INSERT INTO votes (encrypted_vote, tally_center_id) VALUES (?, ?)",
                   (encrypted_vote, tally_center_id))
-    # Записываем zkp в базу - как подтверждение того, что человек уже голосовал и не может голосовать повторно
+    # Commit ZKP to database (to prevent double voting)
     execute_query("UPDATE voters SET zkp=? WHERE id=?", (zkp, passport))
-    # Возвращаем True - все прошло хорошо
     return True
 
 
-# Функция подсчета голосов
+# Function for counting votes
 def tally_votes(tally_center_id, tally_center_private_key):
     """
-    Функция подсчета голосов. Принимает id участка и приватный ключ участка. Эта функция обработает все голоса,
-    которые были сделаны на этом участке и дешифрует их с помощью приватного ключа участка. Затем она подсчитает
-    результаты и запишет их в таблицу tally_results в БД.
+    Function for counting votes. Takes tally center ID and tally center private key. This function will process all
+    votes that were made on this tally center and decrypt them using tally center private key. Then it will count
+    results and write them to tally_results table in DB.
     """
-    # Проверка, существует ли вообще такой участок - пытаем получить его по id
+    # Check if tally center exists
     tally_center = get_tally_center(tally_center_id)[0]
     if not tally_center:
-        # Если не получилось - возвращаем ошибку 0 - нет такого участка
+        # Return 0 if tally center doesn't exist
         return 0
     try:
-        # Попытка загрузить приватный ключ из строки
+        # Try to load private key. If it fails - return -1 - wrong private key
         private_key = serialization.load_pem_private_key(
             tally_center_private_key,
             password=None,
             backend=default_backend()
         )
     except:
-        # Если не получилось - возвращаем ошибку -1 - неверный приватный ключ
         return -1
 
-    # Получение из БД зашифрованных голосов по id участка
+    # Get all encrypted votes from database for this tally center
     encrypted_votes = execute_query("SELECT encrypted_vote FROM votes WHERE tally_center_id=?", (tally_center_id,))
 
-    # Дешифрование голосов и подсчет результатов
-    # results - словарь, в котором ключ - id кандидата, а значение - количество голосов за него
-    results = defaultdict(int)  # int - это тип данных, который возвращает defaultdict, если ключа нет в словаре
+    # Decrypt all votes and count results
+    # results - dictionary for counting results. Key - candidate ID, value - number of votes for this candidate
+    results = defaultdict(int)  # int - default value for dictionary (starts from 0)
     for encrypted_vote_data in encrypted_votes:
-        # Проходим по всем зашифрованным голосам. При этом каждый голос будет называться encrypted_vote_data.
-        # Дешифруем голос с помощью приватного ключа участка
+        # Trying to decrypt all votes
         decrypted_vote = crypto.decrypt_vote(encrypted_vote_data[0], private_key)
         if decrypted_vote is None:
-            # Если при дешифровании произошла ошибка - возвращаем ошибку -2 - не подходящий приватный ключ
+            # If decryption failed - wrong private key or corrupted vote
             return -2
         """
-        Если все хорошо - добавляем в словарь результатов голос за кандидата с id, который мы получили при
-        дешифровании голоса (decrypted_vote) - это id кандидата 
+        If we are here - decryption was successful. Add 1 to the number of votes for this candidate.
         """
         results[decrypted_vote] += 1
 
     """
-    Так как результаты представляют из себя сложную структуру - словарь, а не просто, например, число мы не можем
-    напрямую записать результаты в БД. Сначала мы должны преобразовать их в что-то более понятное для SQLLite, например
-    в формат JSON. Для этого мы используем библиотеку json.
+    Because results are a complex structure - dictionary, not just, for example, a number, we cannot write the results
+    directly to the database. First, we must convert them into something more understandable for SQLLite, for example,
+    in JSON format. To do this, we use the json library.
     """
     results_str = json.dumps(results)
     """
-    Так как мы будем хранить результаты в незашифрованном виде (id кандидата и количество голосов за него), то 
-    злоумышленник может легко их взломать, просто написав свои результаты. Разумеется, мы этого не хотим, для этого 
-    полученные результаты мы подписываем с помощью приватного ключа участка. Для этого мы используем функцию
-    sign_results из файла crypto. Эта функция возвращает подпись в формате base64. Мы записываем результаты и подпись
-    в БД. (см файл crypto.py)
+    Because we will store the results in unencrypted form (candidate ID and number of votes for him), the attacker can
+    easily hack them by simply writing his own results. Of course, we do not want this, for this we sign the results
+    using the private key of the tally center. To do this, we use the sign_results function from the crypto file. This
+    function returns a signature in base64 format. We write the results and the signature to the database. (see the
+    crypto.py file)
     """
     execute_query("INSERT INTO tally_results (tally_center_id, result, signature) VALUES (?, ?, ?)",
                   (tally_center_id, results_str, crypto.sign_results(results_str, private_key)))
-    """
-    Немного объяснений про SQL. В скобках мы указываем как поля называются в таблице, а вопросительные знаки - это
-    то, что мы передадим внутрь запроса. Таким образом, вместо первого вопросительного знака будет подставлено
-    значение tally_center_id, вместо второго - results_str и вместо третьего - подпись (все то, что идет после запятой
-    после самого запроса. Такой формат будет использоваться везде, где мы будем передавать данные в БД.
-    """
-    # Возвращаем True - все прошло хорошо
     return True
 
 
-# Функция проверки результатов
+# Function for checking votes
 def check_votes():
     """
-    Эта функция сразу выполняет несколько ролей: для начала она возвращает нам в удобном виде результаты голосования
-    по каждому участку. Также она проверяет подписи участков и возвращает результат проверки, а значит предотвращает
-    изменения результатов голосования в БД. По факту эта функция - реализация 6 пункта из ТЗ.
+    This function immediately performs several roles: first, it returns us the results of the vote in a convenient
+    form for each tally center. It also checks the signatures of the tally centers and returns the result of the check,
+    thus preventing changes to the voting results in the database. In fact, this function is the implementation of the
+    6th item from the technical task.
     """
-    final_results = []  # Список, в котором будут храниться результаты голосования по каждому участку
-    # Проходим по каждому участку
+    final_results = []  # List for final results
     for tally_center in list_of_tally_centers():
         """
-        Проходим по каждому участку, записываем его id и имя в переменные center_id и center_name соответственно.
+        Do it for each tally center. Store his id and name in variables center_id and center_name respectively.
         """
         center_id = tally_center[0]
         center_name = tally_center[1]
 
-        #  Получаем результаты голосования по участку из БД
+        #  Get results from database
         try:
             tally_results = \
                 execute_query("SELECT * FROM tally_results WHERE tally_center_id=?",
                               (center_id,))[
                     0]
         except:
-            #  Если результатов нет - возвращаем 0. Это означает, что голосование еще не закончено (не все участки)
+            # If there are no results for this tally center - return 0. It means that voting is not finished yet
             return 0
 
-        #  Получаем публичный ключ участка из БД
+        #  Get public key of tally center from database
         public_key = load_pem_public_key(tally_center[2].encode('utf-8'))
         if not crypto.verify_signature(tally_results[2], tally_results[3], public_key):
-            #  Если подпись не прошла проверку - возвращаем -1 - ошибка. Значит результаты были кем-то изменены
+            # If signature is not valid - return -1 (voting results are corrupted or wrong public key)
             return -1
 
-        """
-        Ранее мы записывали результаты в БД в формате JSON. Теперь мы их получаем и преобразуем обратно в словарь
-        """
+        # Convert results from JSON to dictionary
         results = json.loads(tally_results[2])
-        #  Список, в котором будут храниться результаты голосования по каждому центру
+        #  List for results of each tally center
         center_results = []
         for candidate_id, votes_count in results.items():
-            # Проходим по словарю с результатами и записываем в список результаты по каждому кандидату.
-            # Получаем имя кандидата по его id
+            # Get name of candidate by his ID
             candidate_name = \
                 execute_query("SELECT name FROM candidates WHERE id=?", (candidate_id,))[0][0]
-            # Записываем в список результаты по кандидату в формате (id, имя, количество голосов)
+            # Add results for this candidate to the list (id, name, votes count)
             center_results.append((candidate_id, candidate_name, votes_count))
-        # Записываем в итоговый список результаты по участку в формате (id, имя, результаты по кандидатам)
+        #  Add results for this tally center to the final list (id, name, results)
         final_results.append((center_id, center_name, center_results))
-    # Возвращаем итоговый список
     return final_results
 
 
-# Функция вывода таблицы голосов на экран (для симуляции)
+# Function for printing results (for simulation)
 def print_votes():
-    # Получение результатов голосования и проверка их подлинности
+    # Check and get results
     results = check_votes()
-    # Если получили ошибку (а это всегда если тип результатов не список) - просто возвращаем эту самую ошибку
+    # If results are not a list - return them (because results are not a list if it's error)
     if not isinstance(results, list):
         return results
-    # Словарь для хранения общего количества голосов для каждого кандидата по всем участках
+    # Dictionary for counting total votes for each candidate
     total_votes = defaultdict(int)
 
     for center_id, center_name, center_results in results:
         """
-        Проходимся по каждому центру из результатов и выводим результаты по каждому кандидату.
+        Print results for each candidate in each tally center.
         """
-        print("{}".format(center_name))  # Выводим название центра
+        print("{}".format(center_name))  # Name of center
         for candidate_id, candidate_name, votes in center_results:
-            # Выводим результаты по каждому кандидату в формате "Имя: количество голосов"
+            # Name of candidate: number of votes for him
             print("{}: {}".format(candidate_name, votes))
-            # Добавляем количество голосов к общему количеству голосов по кандидату
+            # Add votes to total votes
             total_votes[candidate_name] += votes
-        print("")  # Пустая строка для разделения результатов разных центров
+        print("")  # Just new line
 
-    # Вывод общего количества голосов
+    # Print total votes
     print("Total votes:")
     for candidate_name, votes in total_votes.items():
-        # Выводим результаты по каждому кандидату в формате "Имя: количество голосов"
+        # Name of candidate: number of votes for him
         print("{}: {}".format(candidate_name, votes))

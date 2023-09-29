@@ -5,46 +5,41 @@ from cryptography.hazmat.primitives import hashes, serialization
 import base64
 
 
-# Функция генерации случайно мастер-фразу для ZKP
+# Functions for generating master phrase for ZKP realization
 def generate_phrase():
     """
-    Мы генерируем случайные 32 байта - некая строка, которая будет использоваться в качестве мастер-фразы.
-    Мастер фраза необходима нам для реализации ZKP (подтверждение с нулевым знанием). Что это значит?
-    Это значит, что мы можем доказать, что проголосовали (или что имеем право голосовать в целом) при этом не
-    раскрывая никакой другой информации (за кого мы голосовали, например).
-    Подробнее про нашу реализацию будет написано в функции to_vote (файл интерфейс).
+    System generate a random 32 bytes - a certain string that will be used as a master phrase. The master phrase is
+    essential for implementing ZKP (Zero-Knowledge Proof). What does this mean? It means that we can prove that we
+    voted (or that we have the right to vote in general) without revealing any other information (like who we voted
+    for, for instance). More details about our implementation can be found in the to_vote function (interface file).
     """
     phrase = os.urandom(32)
     return str(phrase)
 
 
-# Функция генерации ключей для шифрования голосов
+# Function for generating private and public keys
 def generate_keys():
     """
-    В нашей системе мы используем асимметричное шифрование. Это значит, что у нас есть два ключа - публичный и
-    приватный. Публичный ключ используется для шифрования данных, а приватный - для расшифровки.
-    Шифрование используется для того, чтобы никто не мог узнать, за кого мы проголосовали, а также для того, чтобы
-    никто не мог подменить наш голос - ведь если мы будем использовать публичный ключ для шифрования, то только
-    приватный ключ сможет расшифровать данные (он не хранится в базе данных, а хранится только у нас).
-    Шифрование происходит с помощью алгоритма RSA (Rivest, Shamir и Adleman).
+    In the system, I use asymmetric encryption. This means that we have two keys - a public key and a private key.
+    The public key is used for encrypting data, while the private key is used for decryption. Encryption ensures that
+    no one can determine who we voted for and also prevents anyone from tampering with our vote. If we use the public
+    key for encryption, only the private key can decrypt the data (it's not stored in the database but is kept with
+    us). The encryption is carried out using the RSA (Rivest, Shamir, and Adleman) algorithm.
     """
-    private_key = rsa.generate_private_key(  # Генерация приватного ключа
-        public_exponent=65537,  # Public exponent - это число, которое используется в алгоритме RSA
-        key_size=2048,  # Key size - это размер ключа в битах
-        backend=default_backend()  # Backend - это библиотека, которая используется для генерации ключей
+    private_key = rsa.generate_private_key(  # Private key generation
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
     )
-    public_key = private_key.public_key()  # Генерация публичного ключа на основе приватного
+    public_key = private_key.public_key()  # Public key generation from private key
     return public_key, private_key
 
 
-# Функции сериализация приватных и публичных ключей
+# Functions for serializing keys
 def serialize_private_key(private_key):
     """
-    Сериализация - это процесс преобразования объекта в поток байтов, который может быть сохранен в файле или
-    передан по сети. В нашем случае мы сериализуем приватный ключ в формате PEM (Privacy Enhanced Mail).
-
-    Если простыми словами - нам необходимо преобразовать сгенерированный приватный ключ в строку, чтобы мы могли
-    сохранить его в базе данных и в дальнейшем использовать для расшифровки голосов.
+    Serialization is the process of converting an object into a byte stream that can be saved to a file or
+    transmitted over a network. In this case, I serialize the private key in PEM (Privacy Enhanced Mail) format.
     """
     return private_key.private_bytes(
         encoding=serialization.Encoding.PEM,  # Формат кодирования - PEM (стандартный формат для таких ключей)
@@ -55,9 +50,7 @@ def serialize_private_key(private_key):
 
 def serialize_public_key(public_key):
     """
-    Аналогичная функция для публичного ключа. Они имеют разный формат сериализации (приватный ключ - PKCS8, а
-    публичный - SubjectPublicKeyInfo) - это стандартные форматы для таких ключей. Также мы используем кодировку
-    PEM (аналогично приватному ключу).
+    A similar function for the public key.
     """
     return public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
@@ -65,26 +58,26 @@ def serialize_public_key(public_key):
     ).decode()
 
 
+# Functions for signing results
 def sign_results(results, private_key):
     """
-    Для реализации требования о невозможности подмены результатов голосования (и возможности это доказать для всех
-    сторон) мы используем подпись. Подпись - это некая строка, которая генерируется на основе данных, которые мы
-    хотим подписать, и приватного ключа. При этом, чтобы подпись была надежной, нам необходимо использовать
-    алгоритм хэширования (в нашем случае SHA256). Хэширование - это процесс преобразования данных в некую строку
-    фиксированной длины (в нашем случае 256 бит). При этом, если мы хотим подписать данные, то нам необходимо
-    сначала их хэшировать, а затем уже подписывать.
+    To implement the requirement of preventing vote results tampering (and the ability to prove it to all parties),
+    I use a signature. A signature is a certain string that is generated based on the data I want to sign and the
+    private key. However, for the signature to be reliable, I need to use a hashing algorithm (in this case,
+    SHA256). Hashing is the process of converting data into a fixed-length string (in this case, 256 bits).
+    Therefore, if I want to sign the data, I need to hash it first and then sign it.
 
-    По факту это очень похоже на то, что мы шифруем данные, но для шифрования мы бы использовали публичный ключ, при
-    этом прочитать данные можно только с приватным ключем. Здесь же для подписи, наоборот, используется приватный ключ
-    (который никто не знает), при этом проверить подпись можно только с помощью публичного ключа (который доступен всем).
-    Таким образом мы можем доказать, что данные были подписаны именно нами, а не кем-то другим и не были изменены.
-    На выходе из функции мы получим отдельную строку-подпись, сами данные останутся незашифрованными.
+In fact, this is very similar to encrypting data, but for encryption, I would use a public key, and the data can only
+be read with a private key. For signing, on the other hand, the private key is used (which no one knows),
+but the signature can only be checked with a public key (which is available to everyone). This way, I can prove that
+the data was signed by me and not by someone else and was not changed. At the end of the function, I get a separate
+signature string, and the data remains unencrypted.
 
-    В случае, если злоумышленник сможет попасть в Базу данных и поменяет значение результатов голосования, то
-    подпись не совпадет с данными, которые мы получим из Базы данных, и мы сможем это доказать.
+If a malicious actor can access the database and change the voting results, the signature will not match the data we
+get from the database, and I can prove it.
     """
     try:
-        # Создание подписи
+        # Creating a signature
         signature = private_key.sign(
             results.encode(),
             padding.PSS(
@@ -93,7 +86,7 @@ def sign_results(results, private_key):
             ),
             hashes.SHA256()
         )
-        # Возвращаем подпись в формате base64 для удобства
+        # Returning the signature in base64 format
         return base64.b64encode(signature).decode()
     except:
         return None
@@ -101,17 +94,17 @@ def sign_results(results, private_key):
 
 def verify_signature(results, signature, public_key):
     """
-    Теперь функция для подтверждения подписи. Это обратная предыдущей функции функция. Мы передаем в нее данные,
-    подпись и публичный ключ, а она возвращает True, если подпись верна, и False, если нет.
+    Now, a function to verify the signature. This is the reverse function of the previous one. I pass the data,
+    signature, and public key to it, and it returns True if the signature is correct, and False if not.
 
-    Таким образом, если данные никто не поменял и они были подписаны правильным приватным ключом (который соответствует
-    публичному ключу, который мы передаем в функцию) - то функция вернет True, в случае какого-либо нарушения - False.
-    Это и есть доказательство того, что результаты действительны и не были подменены.
+Thus, if no one changed the data and they were signed with the correct private key (which corresponds to the public
+key that I pass to the function) - then the function will return True. In case of any violation, it will return
+False. This is proof that the results are valid and have not been tampered with.
     """
     try:
-        # Декодирование подписи из формата base64
+        # Decoding the signature from base64
         signature_bytes = base64.b64decode(signature)
-        # Верификация подписи
+        # Verifying the signature
         public_key.verify(
             signature_bytes,
             results.encode(),
@@ -126,31 +119,27 @@ def verify_signature(results, signature, public_key):
         return False
 
 
-# Функции шифрования и расшифровки голосов
+# Functions for encrypting and decrypting votes (or other data)
 def encrypt_vote(vote, public_key):
     """
-    Функция шифрования ключа. Как говорилось выше (в функции generate_keys), для шифрования используется публичный
-    ключ, а для расшифровки - приватный. Таким образом, мы шифруем голос с помощью публичного ключа, а расшифровываем
-    с помощью приватного. При этом, чтобы шифрование было надежным, мы используем алгоритм OAEP (Optimal Asymmetric
-    Encryption Padding) - нам нужно учитывать, что если мы будем шифровать голос стандартными методами он каждый раз
-    будет выглядеть одинаково и злоумышленник по внешнему виду сможет понять за кого был отдан голос. Поэтому мы
-    используем OAEP - это алгоритм, который добавляет к нашим данным некоторые случайные данные, чтобы шифр каждый раз
-    выглядел по-разному. Таким образом, злоумышленник не сможет понять за кого был отдан голос, даже если он получит
-    доступ к Базе данных. Этот процесс называется "заполнение" (добавление случайных данных к шифруемым данным).
+    Encryption function. As I mentioned earlier (in the generate_keys function), the public key is used for
+    encryption, and the private key is used for decryption. Thus, I encrypt the vote using the public key and decrypt
+    it using the private key. To ensure reliable encryption, I use the OAEP (Optimal Asymmetric Encryption Padding)
+    algorithm. It's important to note that if I encrypt the vote using standard methods, it will look the same every
+    time, allowing a malicious actor to determine the vote based on its appearance. That's why I use OAEP - an
+    algorithm that adds some random data to our data, making the cipher look different each time. This way,
+    a malicious actor won't be able to determine the vote, even if they gain access to the database. This process is
+    called "padding" (adding random data to the data being encrypted).
     """
     try:
         encrypted_vote = public_key.encrypt(
             str(vote).encode(),
-            padding.OAEP(  # Заполнение OAEP
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),  # Алгоритм заполнения - MGF1
+            padding.OAEP(  # OAEP padding
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
                 algorithm=hashes.SHA256(),
                 label=None
             )
         )
-        """
-        Мы используем base64 для того, чтобы закодировать наш шифр в строку, которую можно будет записать в Базу данных.
-        По факту это приведение формата данных к строке, чтобы мы могли записать его в Базу данных.
-        """
         return base64.b64encode(encrypted_vote).decode()
     except:
         return None
@@ -158,11 +147,11 @@ def encrypt_vote(vote, public_key):
 
 def decrypt_vote(encrypted_vote, private_key):
     """
-    Зашифрованный с помощью публичного ключа голос можно расшифровать только с помощью соответствующего приватного ключа.
-    Мы передаем в функцию зашифрованные данные и приватный ключ, а она возвращает расшифрованные данные.
+    The vote encrypted with the public key can only be decrypted using the corresponding private key. I pass the
+    encrypted data and the private key to the function, and it returns the decrypted data.
     """
     try:
-        decoded_vote = base64.b64decode(encrypted_vote)  # Декодирование из формата base64
+        decoded_vote = base64.b64decode(encrypted_vote)
         decrypted_vote = private_key.decrypt(
             decoded_vote,
             padding.OAEP(

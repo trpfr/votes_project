@@ -1,20 +1,20 @@
 import random
 import sqlite3
-from cryptography.hazmat.primitives import serialization
 import crypto
 
 """
-Для демонстрации работы системы и для того, чтобы не заполнять базу данных в ручную каждый раз мы создали файл
-генерации БД. Он заполняет базу данных случайными данными. Для запуска нужно выполнить функцию data_generation().
+For the demonstration of the system's operation and to avoid manually filling the database every time, I created a 
+database generation file. It populates the database with random data. To start, you need to execute the 
+data_generation() function.
 """
 
 
 def data_generation():
-    # Подключаемся к базе данных
+    # Connecting to the database
     conn = sqlite3.connect('voting_database.db')
     cursor = conn.cursor()
 
-    # Случайные (или не очень) имена
+    # Random names
     names = [
         "Adele",
         "Beyonce",
@@ -33,7 +33,7 @@ def data_generation():
         "Olivia",
         "Pink"]
 
-    # Случайные (или не очень) фамилии
+    # Random lastnames
     lastnames = [
         "Adkins",
         "Knowles",
@@ -53,82 +53,83 @@ def data_generation():
         "Moore"
     ]
 
-    # Список кандидатов (по условию их всего 2)
+    # List of candidates (in this case only two)
     candidates = [
         "Republicans",
         "Democrats"
     ]
 
-    # Количество голосующих для генерации
+    # Count of voters
     count_of_voters = 100
 
-    # Генерируем случайные имена и фамилии (комбинируем в случайном порядке из двух списков выше)
+    # Generating random names (combination of first and last names)
     random_names = [(random.choice(names), random.choice(lastnames)) for _ in range(count_of_voters)]
 
-    # Создание избирателей
+    # Creating voters
     for first, last in random_names:
-        # Полное имя - итог комбинации выше
+        # Full name
         full_name = f"{first} {last}"
 
-        # Случайный номер паспорта (6 цифр)
+        # Random passport number
         passport = random.randint(100000, 999999)
 
-        # Генерируем ключи
+        # Key generation
         """
-        Каждый голосующий должен иметь публичный ключ (приглашение на выборы) и приватный ключ (некая ключ-карта для 
-        подтверждения того, что он имеет право голосовать). Публичный ключ хранится в базе данных, а приватный ключ
-        сохраняется в файле. 
-        
-        Мы используем их для реализации системы zero-knowledge proof (ZKP). Это система, которая позволяет доказать
-        факт, не раскрывая при этом никакой другой информации. В нашем случае мы используем ее для того, чтобы
-        доказать, что голосующий имеет право голосовать, не раскрывая при этом его личность. А также, что голосующий
-        уже голосовал, чтобы не дать ему голосовать дважды.
+        Each voter must have a public key (an invitation to vote) and a private key (a kind of key card to confirm 
+        that they have the right to vote). The public key is stored in the database, while the private key is saved 
+        in a file.
+
+        I use them to implement the zero-knowledge proof (ZKP) system. This system allows proving a fact without 
+        revealing any other information. In my case, I use it to prove that the voter has the right to vote without 
+        revealing their identity. Also, to confirm that the voter has already voted, preventing them from voting 
+        twice.
         """
         public_key, private_key = crypto.generate_keys()
         pem = crypto.serialize_private_key(private_key)
 
-        # Сохраняем приватный ключ в файл
+        """
+        Saving the private key to a file 
+        (just for demonstration, in real implementation it should be stored as private card
+        """
         with open(f"user_keys/private_key_{passport}.pem", "wb") as f:
             f.write(pem)
 
-        # Сохраняем данные голосующего в базу данных
+        # Saving the voter to the database
         cursor.execute("INSERT INTO voters (id, name, public_key) VALUES (?, ?, ?)", (passport,
                                                                                       full_name,
                                                                                       crypto.serialize_public_key(
                                                                                           public_key)))
 
-    # Создание кандидатов (из списка кандидатов выше)
+    # Creating candidates
     for candidate in candidates:
         cursor.execute("INSERT INTO candidates (name) VALUES (?)", (candidate,))
 
-    # Создание участков
-    # Количество генерируемых участков
+    # Creating voting centers
+    # Count of voting centers
     tally_centers_count = 5
     for i in range(tally_centers_count):
-        # Генерируем ключи (для подписи и проверки голосов)
+        # Generating keys for each voting center (for encryption and decryption of votes)
         public_key, private_key = crypto.generate_keys()
 
-        # Генерируем название участка (просто порядковый номер в списке + 1 (так как нумерация с 0))
+        # Generating name for each voting center (for demonstration just Tally center № + number)
         name = f"Tally center №{i + 1}"
 
-        # Сохраняем данные участка в базу данных
+        # Saving voting center to the database
         cursor.execute("INSERT INTO tally_centers (name, public_key) VALUES (?, ?)",
                        (name, crypto.serialize_public_key(public_key)))
 
-        # Переводим приватный ключ в формат PEM (для сохранения в файл - сериализация (см crypto)
+        # Saving private key to the file (serializing and saving to the file)
         pem = crypto.serialize_private_key(private_key)
-        # Сохраняем приватный ключ в файл
         with open(f"tally_keys/private_key_{i + 1}.pem", "wb") as f:
             f.write(pem)
 
-    # Сохраняем изменения в БД и закрываем соединение
+    # Committing changes and closing connection
     conn.commit()
     conn.close()
 
-    # Генерируем мастер-фразу для zkp и сохраняем в файл
+    # Generating master phrase
     """
-    Это просто случайный набор байтов, который мы в дальнейшем шифруем и расшифровываем для реализации
-    ZKP (см crypto.py)
+    This is just a random set of bytes that I later encrypt and decrypt to implement ZKP (see crypto.py)
     """
     master_phrase = crypto.generate_phrase()
     with open("master_phrase.txt", "w") as f:
