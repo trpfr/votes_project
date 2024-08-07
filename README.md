@@ -124,3 +124,21 @@ Queries the database, returns the result or a formatted error message.
 
 #### 9.2 menu()
 Main interface function for information display, input, and processing.
+
+## Installation 
+
+1. Clone the repository (use these commands in the terminal):    
+   ```git clone https://github.com/piratinskii/votes_project.git```
+   
+   ```cd votes_project``` 
+
+2. (Optional) Create a virtual environment:   
+   ```python -m venv venv```
+   
+   ```source venv/bin/activate  # On Windows, use `venv\Scripts\activate```
+
+3. Install dependencies:    
+   ```pip install -r requirements.txt```
+
+4. Run the program
+   ```python interface.py``` or ```python3 interface.py```
